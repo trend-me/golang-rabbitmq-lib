@@ -1,4 +1,4 @@
-module ggithub.com/trend-me/golang-rabbitmq-lib
+module github.com/trend-me/golang-rabbitmq-lib
 
 go 1.22
 
