@@ -144,61 +144,68 @@ func (q *Queue) Consume(ctx context.Context, handler func(delivery amqp.Delivery
 	if err != nil {
 		return err
 	}
-	forever := make(chan bool)
+
 	go func() {
-		for msg := range messagesCh {
-			e := handler(msg)
-			if e != nil {
-				if msg.Headers == nil {
-					msg.Headers = map[string]any{}
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case msg, ok := <-messagesCh:
+				if !ok {
+					return
 				}
-				retry, _ := msg.Headers["x-retry-count"].(int32)
-				fmt.Println(fmt.Sprintf("%s - x-retry-count: %d - ", time.Now().Format(time.RFC3339), retry), e.Error())
+				e := handler(msg)
+				if e != nil {
+					if msg.Headers == nil {
+						msg.Headers = map[string]any{}
+					}
+					retry, _ := msg.Headers["x-retry-count"].(int32)
+					fmt.Println(fmt.Sprintf("%s - x-retry-count: %d - ", time.Now().Format(time.RFC3339), retry), e.Error())
 
-				maxConsumerRetries, _ := strconv.Atoi(os.Getenv(envKeyQueueMaxRetries))
-				if q.retryable && int(retry) < maxConsumerRetries {
-					msg.Headers["x-retry-count"] = retry + 1
-					msg.Headers["x-delay"] = os.Getenv(envKeyQueueRetryDelay)
-					if err = q.channel.PublishWithContext(
-						ctx,
-						delayExchangeName,
-						q.name,
-						false,
-						false,
-						amqp.Publishing{
-							Headers:     msg.Headers,
-							ContentType: msg.ContentType,
-							Body:        msg.Body,
-						},
-					); err != nil {
-						log.Printf("Failed to re-enqueue message to main queue: %v", err)
+					maxConsumerRetries, _ := strconv.Atoi(os.Getenv(envKeyQueueMaxRetries))
+					if q.retryable && int(retry) < maxConsumerRetries {
+						msg.Headers["x-retry-count"] = retry + 1
+						msg.Headers["x-delay"] = os.Getenv(envKeyQueueRetryDelay)
+						if err = q.channel.PublishWithContext(
+							ctx,
+							delayExchangeName,
+							q.name,
+							false,
+							false,
+							amqp.Publishing{
+								Headers:     msg.Headers,
+								ContentType: msg.ContentType,
+								Body:        msg.Body,
+							},
+						); err != nil {
+							log.Printf("Failed to re-enqueue message to main queue: %v", err)
+						}
+					} else if q.dlq {
+						if err = q.channel.PublishWithContext(
+							ctx,
+							"",
+							q.dqlName,
+							false,
+							false,
+							amqp.Publishing{
+								ContentType: msg.ContentType,
+								Body:        msg.Body,
+							},
+						); err != nil {
+							log.Printf("Failed to publish message to DLQ: %v\n", err)
+						}
 					}
-				} else if q.dlq {
-					if err = q.channel.PublishWithContext(
-						ctx,
-						"",
-						q.dqlName,
-						false,
-						false,
-						amqp.Publishing{
-							ContentType: msg.ContentType,
-							Body:        msg.Body,
-						},
-					); err != nil {
-						log.Printf("Failed to publish message to DLQ: %v\n", err)
-					}
+
 				}
-
+				err = msg.Ack(false)
+				if err != nil {
+					log.Printf("Failed to ack message: %v\n", err)
+				}
 			}
-			err = msg.Ack(false)
-			if err != nil {
-				log.Printf("Failed to ack message: %v\n", err)
-			}
-
 		}
 	}()
 
-	<-forever
+	<-ctx.Done()
 	return
 }
 
