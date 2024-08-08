@@ -130,7 +130,9 @@ func (q *Queue) Close() (err error) {
 	return
 }
 
-func (q *Queue) Consume(ctx context.Context, handler func(delivery amqp.Delivery) error) (err error) {
+func (q *Queue) Consume(ctx context.Context, handler func(delivery amqp.Delivery) error) (chan error, error) {
+	errorCh := make(chan error)
+
 	messagesCh, err := q.channel.ConsumeWithContext(
 		ctx,
 		q.name,
@@ -142,10 +144,11 @@ func (q *Queue) Consume(ctx context.Context, handler func(delivery amqp.Delivery
 		nil,
 	)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	go func() {
+		defer close(errorCh)
 		for {
 			select {
 			case <-ctx.Done():
@@ -156,6 +159,7 @@ func (q *Queue) Consume(ctx context.Context, handler func(delivery amqp.Delivery
 				}
 				e := handler(msg)
 				if e != nil {
+					errorCh <- e
 					if msg.Headers == nil {
 						msg.Headers = map[string]any{}
 					}
@@ -195,7 +199,6 @@ func (q *Queue) Consume(ctx context.Context, handler func(delivery amqp.Delivery
 							log.Printf("Failed to publish message to DLQ: %v\n", err)
 						}
 					}
-
 				}
 				err = msg.Ack(false)
 				if err != nil {
@@ -205,8 +208,7 @@ func (q *Queue) Consume(ctx context.Context, handler func(delivery amqp.Delivery
 		}
 	}()
 
-	<-ctx.Done()
-	return
+	return errorCh, nil
 }
 
 func NewQueue(connection *Connection, name, contentType string, createIfNotExists, dlq, retryable bool) *Queue {
