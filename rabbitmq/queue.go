@@ -167,8 +167,8 @@ func (q *Queue) Consume(ctx context.Context, handler func(delivery amqp.Delivery
 					return
 				}
 				e := handler(msg)
+				errorCh <- e
 				if e != nil {
-					errorCh <- e
 					if msg.Headers == nil {
 						msg.Headers = map[string]any{}
 					}
