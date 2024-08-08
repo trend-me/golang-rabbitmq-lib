@@ -131,8 +131,12 @@ func (q *Queue) Close() (err error) {
 }
 
 func (q *Queue) Consume(ctx context.Context, handler func(delivery amqp.Delivery) error) (chan error, error) {
+	if q.channel == nil {
+		if err := q.Connect(); err != nil {
+			return nil, err
+		}
+	}
 	errorCh := make(chan error)
-
 	messagesCh, err := q.channel.ConsumeWithContext(
 		ctx,
 		q.name,
