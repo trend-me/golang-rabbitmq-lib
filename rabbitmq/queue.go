@@ -38,14 +38,18 @@ func (q *Queue) Connect() (err error) {
 		if err != nil {
 			if amqpErr, ok := err.(*amqp.Error); ok {
 				if amqpErr.Code == amqp.ChannelError {
-					q.connection.Reconnect()
+					err = q.connection.Reconnect()
+					if err != nil {
+						return
+					}
 					q.channel, err = q.connection.Channel()
 					if err != nil {
 						return
 					}
 				}
+			} else {
+				return
 			}
-			return
 		}
 	}
 
