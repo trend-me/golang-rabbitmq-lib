@@ -3,11 +3,12 @@ package rabbitmq
 import (
 	"context"
 	"fmt"
-	amqp "github.com/rabbitmq/amqp091-go"
 	"log"
 	"os"
 	"strconv"
 	"time"
+
+	amqp "github.com/rabbitmq/amqp091-go"
 )
 
 const (
@@ -28,7 +29,7 @@ type Queue struct {
 	channel                           *amqp.Channel
 	queue                             *amqp.Queue
 	name, contentType, dqlName        string
-	createIfNotExists, retryable, dlq bool
+	createIfNotExists, retirable, dlq bool
 }
 
 func (q *Queue) Connect() (err error) {
@@ -71,7 +72,7 @@ func (q *Queue) Connect() (err error) {
 
 	}
 
-	if q.retryable {
+	if q.retirable {
 		err = q.channel.ExchangeDeclare(
 			delayExchangeName,
 			"x-delayed-message",
@@ -136,7 +137,7 @@ func (q *Queue) Close() (err error) {
 }
 
 func (q *Queue) Consume(ctx context.Context, handler func(delivery amqp.Delivery) error) (chan error, error) {
-	if q.channel == nil {
+	if q.channel == nil || q.channel.IsClosed() {
 		if err := q.Connect(); err != nil {
 			return nil, err
 		}
@@ -176,7 +177,7 @@ func (q *Queue) Consume(ctx context.Context, handler func(delivery amqp.Delivery
 					fmt.Println(fmt.Sprintf("%s - x-retry-count: %d - ", time.Now().Format(time.RFC3339), retry), e.Error())
 
 					maxConsumerRetries, _ := strconv.Atoi(os.Getenv(envKeyQueueMaxRetries))
-					if q.retryable && int(retry) < maxConsumerRetries {
+					if q.retirable && int(retry) < maxConsumerRetries {
 						msg.Headers["x-retry-count"] = retry + 1
 						msg.Headers["x-delay"] = os.Getenv(envKeyQueueRetryDelay)
 						if err = q.channel.PublishWithContext(
@@ -229,6 +230,6 @@ func NewQueue(connection *Connection, name, contentType string, createIfNotExist
 		contentType:       contentType,
 		createIfNotExists: createIfNotExists,
 		dlq:               dlq,
-		retryable:         retryable,
+		retirable:         retryable,
 	}
 }
