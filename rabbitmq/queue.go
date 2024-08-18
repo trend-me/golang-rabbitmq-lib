@@ -33,7 +33,7 @@ type Queue struct {
 }
 
 func (q *Queue) Connect() (err error) {
-	if q.channel == nil {
+	if q.channel == nil || q.channel.IsClosed() {
 		q.channel, err = q.connection.Channel()
 		if err != nil {
 			return
