@@ -36,6 +36,15 @@ func (q *Queue) Connect() (err error) {
 	if q.channel == nil || q.channel.IsClosed() {
 		q.channel, err = q.connection.Channel()
 		if err != nil {
+			if amqpErr, ok := err.(*amqp.Error); ok {
+				if amqpErr.Code == amqp.ChannelError {
+					q.connection.Reconnect()
+					q.channel, err = q.connection.Channel()
+					if err != nil {
+						return
+					}
+				}
+			}
 			return
 		}
 	}
@@ -103,7 +112,7 @@ func (q *Queue) Connect() (err error) {
 }
 
 func (q *Queue) Publish(ctx context.Context, content []byte) (err error) {
-	if q.channel == nil {
+	if q.channel == nil || q.channel.IsClosed() {
 		if err = q.Connect(); err != nil {
 			return nil
 		}
