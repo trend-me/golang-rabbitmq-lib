@@ -12,8 +12,8 @@ type Connection struct {
 }
 
 func (c *Connection) Connect(user, pwd, host, port string) (err error) {
-	user, pwd, host, port = user, pwd, host, port
-	c.Connection, err = amqp.Dial(fmt.Sprintf("amqp://%s:%s@%s:%s/", user, pwd, host, port))
+	c.user, c.pwd, c.host, c.port = user, pwd, host, port
+	c.Connection, err = amqp.Dial(fmt.Sprintf("amqp://%s:%s@%s:%s/", c.user, c.pwd, c.host, c.port))
 	return
 }
 
@@ -25,3 +25,4 @@ func (c *Connection) Reconnect() (err error) {
 func (c *Connection) Disconnect() error {
 	return c.Close()
 }
+
